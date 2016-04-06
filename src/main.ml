@@ -13,9 +13,13 @@ type state = { ar : int array;
                inst_ptr : int;
                complete : bool; }
 
+let get_cur_byte state = state.ar.(state.data_ptr)
+
 
 type program = command array
 
+
+let get_cur_inst state program = program.(state.inst_ptr)
 
 let command_of_char = function
   | '>' -> Some IncPtr
@@ -28,6 +32,8 @@ let command_of_char = function
   | ']' -> Some JumpBack
   | _   -> None
 
+
+let next_inst state = { state with inst_ptr = (state.inst_ptr + 1)}
 
 let inc_ptr state = { state with data_ptr = (state.data_ptr + 1);
                                  inst_ptr = (state.inst_ptr + 1) }
@@ -57,25 +63,46 @@ let input state in_char =
                inst_ptr = (state.inst_ptr + 1) }
 
 
-(* I want to scan through the array, starting from state.inst_ptr,
-   and upon reaching a [, recurse, and a ], step forward one and return. *)
-let jump_ahead program state =
-  let start = state.inst_ptr in
-  let tail = Array.slice program state.inst_ptr 0 in
-  let offset = match Array.findi tail ~f:(fun i c -> c = JumpBack) with
-    | None -> failwith "Didn't find ]!"
-    | Some (i,_) -> i
+
+let rec skip_ahead program state =
+  let tail =
+    Array.slice program state.inst_ptr 0
   in
-  { state with inst_ptr = (start + offset) + 1 }
+  let (offset, cmd) = match Array.findi tail
+      ~f:(fun i cmd -> (cmd = JumpAhead || cmd = JumpBack))
+    with
+    | None -> failwith "Matching ] did not exist"
+    | Some (o,c) -> (o,c)
+  in
+  let newstate = { state with inst_ptr = (state.inst_ptr + offset + 1) } in
+  if cmd = JumpBack then
+    newstate
+  else
+    skip_ahead program newstate
+
 
 let jump_back program state =
-  let start = state.inst_ptr in
   let head = Array.slice program 0 state.inst_ptr in
   let bracket = match Array.findi head ~f:(fun i c -> c = JumpAhead) with
     | None -> failwith "Didn't find [!"
     | Some (i,_) -> i
   in
   { state with inst_ptr = bracket + 1}
+
+
+let rec skip_back program state =
+  let head = Array.slice program 0 state.inst_ptr in
+  let (offset, cmd) = match Array.findi head
+                              ~f:(fun i cmd -> (cmd = JumpAhead || cmd = JumpBack))
+    with
+    | None -> failwith ("Matching [ did not exist")
+    | Some (o,c) -> (o,c)
+  in
+  let newstate = { state with inst_ptr = (offset + 1) } in
+  if cmd = JumpAhead then
+    newstate
+  else
+    skip_back program newstate
 
 
 let do_command state cmd program =
@@ -86,12 +113,26 @@ let do_command state cmd program =
   | DecByte -> dec_byte state
   | Output -> output state
   | Input -> input state (input_char Core.Std.stdin)
-  | JumpAhead -> jump_ahead program state
-  | JumpBack -> jump_back program state
+  | JumpAhead ->
+    if get_cur_byte state = 0
+    then
+      skip_ahead program state
+    else
+      next_inst state
+  | JumpBack ->
+    if get_cur_byte state <> 0
+    then
+      skip_back program state
+    else
+      next_inst state
 
 
 (* hello world *)
-let program = "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++."
+let hello_world = "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++."
+
+let add_vals = "[->+<]"
+
+let program = add_vals
 
 let program_of_string str =
   String.to_array str
@@ -115,10 +156,20 @@ let step (state, prg) =
     let newstate = do_command state cmd prg in
     (newstate,prg)
 
+let rec step_n (state,prg) n =
+  if n > 0 then
+    let cmd = prg.(state.inst_ptr) in
+    let newstate = do_command state cmd prg in
+    step_n (newstate,prg) (n-1)
+  else
+    (state,prg)
+
+
 (* let run_with_program prg f = f prg *)
 
 let () =
   let state = init_state () in
   let prg = program_of_string program in
 
-  compute state prg
+  (* compute state prg *)
+    ()
