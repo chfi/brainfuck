@@ -3,22 +3,19 @@ open Core.Std
 type command = IncPtr | DecPtr | IncByte   | DecByte
              | Output | Input  | JumpAhead | JumpBack
 
-
 let ar_size = 30_000
-
-
 
 type state = { ar : int array;
                data_ptr : int;
                inst_ptr : int;
                complete : bool; }
 
-let get_cur_byte state = state.ar.(state.data_ptr)
 
 
 type program = command array
 
-
+(* debug helper functions *)
+let get_cur_byte state = state.ar.(state.data_ptr)
 let get_cur_inst state program = program.(state.inst_ptr)
 
 let command_of_char = function
@@ -35,78 +32,78 @@ let command_of_char = function
 
 let next_inst state = { state with inst_ptr = (state.inst_ptr + 1)}
 
-let inc_ptr state = { state with data_ptr = (state.data_ptr + 1);
-                                 inst_ptr = (state.inst_ptr + 1) }
-let dec_ptr state = { state with data_ptr = (state.data_ptr - 1);
-                                 inst_ptr = (state.inst_ptr + 1) }
+let inc_ptr state = { state with data_ptr = (state.data_ptr + 1) }
+let dec_ptr state = { state with data_ptr = (state.data_ptr - 1) }
 
 let inc_byte state =
   let newarray = Array.copy (state.ar) in
   newarray.(state.data_ptr) <- (newarray.(state.data_ptr) + 1);
-  { state with ar = newarray;
-               inst_ptr = (state.inst_ptr + 1) }
+  { state with ar = newarray }
 
 let dec_byte state =
   let newarray = Array.copy (state.ar) in
   newarray.(state.data_ptr) <- (newarray.(state.data_ptr) - 1);
-  { state with ar = newarray;
-               inst_ptr = (state.inst_ptr + 1) }
+  { state with ar = newarray }
 
 let output state =
   print_char (char_of_int state.ar.(state.data_ptr));
-  { state with inst_ptr = (state.inst_ptr + 1) }
+  state
 
 let input state in_char =
   let newarray = Array.copy (state.ar) in
   newarray.(state.data_ptr) <- int_of_char in_char;
-  { state with ar = newarray;
-               inst_ptr = (state.inst_ptr + 1) }
+  { state with ar = newarray }
 
 
-
-let rec skip_ahead program state =
+let rec skip_ahead program state depth =
   let tail =
-    Array.slice program state.inst_ptr 0
+    Array.slice program (state.inst_ptr + 1) 0
   in
   let (offset, cmd) = match Array.findi tail
       ~f:(fun i cmd -> (cmd = JumpAhead || cmd = JumpBack))
     with
     | None -> failwith "Matching ] did not exist"
-    | Some (o,c) -> (o,c)
+    | Some (o,c) -> (o + 1,c)
   in
-  let newstate = { state with inst_ptr = (state.inst_ptr + offset + 1) } in
+  let newstate = { state with inst_ptr = (state.inst_ptr + offset) } in
   if cmd = JumpBack then
-    newstate
+    if (depth = 0) then
+      newstate
+    else
+      skip_ahead program newstate (depth - 1)
   else
-    skip_ahead program newstate
+    skip_ahead program newstate (depth + 1)
 
 
-let jump_back program state =
-  let head = Array.slice program 0 state.inst_ptr in
-  let bracket = match Array.findi head ~f:(fun i c -> c = JumpAhead) with
-    | None -> failwith "Didn't find [!"
-    | Some (i,_) -> i
+let rec skip_back program state depth =
+  let head =
+    Array.slice program 0 state.inst_ptr
   in
-  { state with inst_ptr = bracket + 1}
-
-
-let rec skip_back program state =
-  let head = Array.slice program 0 state.inst_ptr in
+    (* needs to be reversed since we're searching backwards ... *)
+  Array.rev_inplace head;
+  let head_len = Array.length head in
   let (offset, cmd) = match Array.findi head
                               ~f:(fun i cmd -> (cmd = JumpAhead || cmd = JumpBack))
     with
     | None -> failwith ("Matching [ did not exist")
     | Some (o,c) -> (o,c)
   in
-  let newstate = { state with inst_ptr = (offset + 1) } in
+  (* needs to reverse the offset since it's currently indexed from the end
+     of the array, not the beginning *)
+  let offset = (head_len - offset) in
+  let newstate = { state with inst_ptr = offset } in
   if cmd = JumpAhead then
-    newstate
+    if (depth = 0) then
+      newstate
+    else
+      skip_back program newstate (depth - 1)
   else
-    skip_back program newstate
+    skip_back program newstate (depth + 1)
 
 
 let do_command state cmd program =
-  match cmd with
+  (
+    match cmd with
   | IncPtr -> inc_ptr state
   | DecPtr -> dec_ptr state
   | IncByte -> inc_byte state
@@ -114,17 +111,17 @@ let do_command state cmd program =
   | Output -> output state
   | Input -> input state (input_char Core.Std.stdin)
   | JumpAhead ->
-    if get_cur_byte state = 0
-    then
-      skip_ahead program state
+    if get_cur_byte state = 0 then
+      skip_ahead program state 0
     else
-      next_inst state
+      state
   | JumpBack ->
-    if get_cur_byte state <> 0
-    then
-      skip_back program state
+    if get_cur_byte state <> 0 then
+      skip_back program state 0
     else
-      next_inst state
+      state
+  )
+  |> next_inst
 
 
 (* hello world *)
@@ -165,7 +162,10 @@ let rec step_n (state,prg) n =
     (state,prg)
 
 
-(* let run_with_program prg f = f prg *)
+let test = "[]++++++++++[>>+>+>++++++[<<+<+++>>>-]<<<<-]\"A*$\";?@![#>>+<<]>[>>]<<<<[>++<[-]]>.>."
+
+let a = init_state ();;
+let p = program_of_string test;;
 
 let () =
   let state = init_state () in
