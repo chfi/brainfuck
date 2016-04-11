@@ -144,7 +144,7 @@ let init_state () = { ar = Array.create ~len:ar_size 0;
 let rec compute state prg =
     let newstate = compute_step state prg in
     if newstate.inst_ptr >= ((Array.length prg) - 1) then
-      print_endline "\nDone"
+      print_endline ""
     else
       compute newstate prg
 
@@ -163,7 +163,13 @@ let p = program_of_string hello_world;;
 
 let () =
   let state = init_state () in
-  let prg = program_of_string hello_world in
+  let input =
+    match Sys.argv with
+    | [|_;file|] -> In_channel.with_file file
+                      ~f:(fun inc -> In_channel.input_all inc)
+    | [|_;|] -> In_channel.input_all stdin
+    | _ -> failwith "filename as argument or use stdin"
+  in
+  let program = program_of_string input in
 
-  compute state prg;
-  ()
+  compute state program;
