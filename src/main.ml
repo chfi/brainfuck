@@ -83,14 +83,12 @@ let rec skip_ahead program state depth =
 
 
 let rec skip_back program state depth =
-  let head =
-    Array.slice program 0 state.inst_ptr
-  in
-    (* needs to be reversed since we're searching backwards ... *)
+  let head = Array.slice program 0 state.inst_ptr in
   Array.rev_inplace head;
   let head_len = Array.length head in
-  let (offset, cmd) = match Array.findi head
-                              ~f:(fun i cmd -> (cmd = JumpAhead || cmd = JumpBack))
+  let (offset, cmd) =
+    match Array.findi head
+            ~f:(fun i cmd -> (cmd = JumpAhead || cmd = JumpBack))
     with
     | None -> failwith ("Matching [ did not exist")
     | Some (o,c) -> (o,c)
@@ -108,27 +106,27 @@ let rec skip_back program state depth =
     skip_back program newstate (depth + 1)
 
 
-let do_command state cmd program =
-  (
-    match cmd with
-  | IncPtr -> inc_ptr state
-  | DecPtr -> dec_ptr state
-  | IncByte -> inc_byte state
-  | DecByte -> dec_byte state
-  | Output -> output state
-  | Input -> input state (input_char Core.Std.stdin)
-  | JumpAhead ->
-    if get_cur_byte state = 0 then
-      skip_ahead program state 0
-    else
-      state
-  | JumpBack ->
-    if get_cur_byte state <> 0 then
-      skip_back program state 0
-    else
-      state
-  )
-  |> next_inst
+let compute_step state program =
+  let next_state =
+    match program.(state.inst_ptr) with
+    | IncPtr -> inc_ptr state
+    | DecPtr -> dec_ptr state
+    | IncByte -> inc_byte state
+    | DecByte -> dec_byte state
+    | Output -> output state
+    | Input -> input state (input_char Core.Std.stdin)
+    | JumpAhead ->
+      if get_cur_byte state = 0 then
+        skip_ahead program state 0
+      else
+        state
+    | JumpBack ->
+      if get_cur_byte state <> 0 then
+        skip_back program state 0
+      else
+        state
+  in
+  next_inst next_state
 
 
 (* hello world *)
@@ -144,36 +142,18 @@ let init_state () = { ar = Array.create ~len:ar_size 0;
                       complete = false; }
 
 let rec compute state prg =
-    let cmd = prg.(state.inst_ptr) in
-    let newstate = do_command state cmd prg in
+    let newstate = compute_step state prg in
     if newstate.inst_ptr >= ((Array.length prg) - 1) then
       print_endline "\nDone"
     else
       compute newstate prg
 
-let step (state, prg) =
-    let cmd = prg.(state.inst_ptr) in
-    let newstate = do_command state cmd prg in
-    (newstate,prg)
-
-let rec step_n (state,prg) n =
+let rec step_n state prg n =
   if n > 0 then
-    let cmd = prg.(state.inst_ptr) in
-    let newstate = do_command state cmd prg in
-    step_n (newstate,prg) (n-1)
+    let newstate = compute_step state prg in
+    step_n newstate prg (n-1)
   else
-    (state,prg)
-
-let step_print (state,prg) =
-  let cmd = prg.(state.inst_ptr) in
-
-  let newstate = do_command state cmd prg in
-
-  print_endline ("Ptr:\t" ^ (string_of_int newstate.data_ptr) ^ "\tval: " ^ (string_of_int newstate.ar.(newstate.data_ptr)));
-
-  print_endline ("Inst_ptr:\t" ^ (string_of_int newstate.inst_ptr) ^ "\tinst: " ^ (string_of_command (prg.(newstate.inst_ptr))));
-
-  (newstate,prg)
+    state
 
 
 let test = "[]++++++++++[>>+>+>++++++[<<+<+++>>>-]<<<<-]\"A*$\";?@![#>>+<<]>[>>]<<<<[>++<[-]]>.>."
