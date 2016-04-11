@@ -3,14 +3,22 @@ open Core.Std
 type command = IncPtr | DecPtr | IncByte   | DecByte
              | Output | Input  | JumpAhead | JumpBack
 
+let string_of_command = function
+  | IncPtr -> ">"
+  | DecPtr -> "<"
+  | IncByte -> "+"
+  | DecByte -> "-"
+  | Output -> "."
+  | Input -> ","
+  | JumpAhead -> "["
+  | JumpBack -> "]"
+
 let ar_size = 30_000
 
 type state = { ar : int array;
                data_ptr : int;
                inst_ptr : int;
                complete : bool; }
-
-
 
 type program = command array
 
@@ -29,7 +37,7 @@ let command_of_char = function
   | ']' -> Some JumpBack
   | _   -> None
 
-
+(* Functions for the brainfuck commands *)
 let next_inst state = { state with inst_ptr = (state.inst_ptr + 1)}
 
 let inc_ptr state = { state with data_ptr = (state.data_ptr + 1) }
@@ -53,7 +61,6 @@ let input state in_char =
   let newarray = Array.copy (state.ar) in
   newarray.(state.data_ptr) <- int_of_char in_char;
   { state with ar = newarray }
-
 
 let rec skip_ahead program state depth =
   let tail =
@@ -91,7 +98,7 @@ let rec skip_back program state depth =
   (* needs to reverse the offset since it's currently indexed from the end
      of the array, not the beginning *)
   let offset = (head_len - offset) in
-  let newstate = { state with inst_ptr = offset } in
+  let newstate = { state with inst_ptr = (offset - 1) } in
   if cmd = JumpAhead then
     if (depth = 0) then
       newstate
@@ -127,10 +134,6 @@ let do_command state cmd program =
 (* hello world *)
 let hello_world = "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++."
 
-let add_vals = "[->+<]"
-
-let program = add_vals
-
 let program_of_string str =
   String.to_array str
   |> Array.filter_map ~f:command_of_char
@@ -144,7 +147,7 @@ let rec compute state prg =
     let cmd = prg.(state.inst_ptr) in
     let newstate = do_command state cmd prg in
     if newstate.inst_ptr >= ((Array.length prg) - 1) then
-      ()
+      print_endline "\nDone"
     else
       compute newstate prg
 
@@ -161,15 +164,26 @@ let rec step_n (state,prg) n =
   else
     (state,prg)
 
+let step_print (state,prg) =
+  let cmd = prg.(state.inst_ptr) in
+
+  let newstate = do_command state cmd prg in
+
+  print_endline ("Ptr:\t" ^ (string_of_int newstate.data_ptr) ^ "\tval: " ^ (string_of_int newstate.ar.(newstate.data_ptr)));
+
+  print_endline ("Inst_ptr:\t" ^ (string_of_int newstate.inst_ptr) ^ "\tinst: " ^ (string_of_command (prg.(newstate.inst_ptr))));
+
+  (newstate,prg)
+
 
 let test = "[]++++++++++[>>+>+>++++++[<<+<+++>>>-]<<<<-]\"A*$\";?@![#>>+<<]>[>>]<<<<[>++<[-]]>.>."
 
 let a = init_state ();;
-let p = program_of_string test;;
+let p = program_of_string hello_world;;
 
 let () =
   let state = init_state () in
-  let prg = program_of_string program in
+  let prg = program_of_string hello_world in
 
-  (* compute state prg *)
-    ()
+  compute state prg;
+  ()
